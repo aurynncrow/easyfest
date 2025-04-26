@@ -9,6 +9,9 @@
 
     let { data } = $props();
 
+    // Set this to true to show a compact agenda for debugging
+    const debugMode = true;
+
     let current_day = $state.raw(data.days?.length > 0 ? data.days[0] : null);
     let container = $state();
     let containerWidth = $state();
@@ -18,9 +21,79 @@
         current_day = day;
     }
 
+    function minutesBetween(start, end) {
+        if (end > start) {
+          return (end - start) / 1000 / 60;
+        }
+        return 0;
+    }
+
+    function startDate(activity) {
+        return new Date(activity.start);
+    }
+
+    function endDate(activity) {
+        return new Date(startDate(activity).getTime() + activity.minutes * 60 * 1000);
+    }
+
+    const compressedIntervals = [
+        [new Date("2025-05-08T21:00:00"), new Date("2025-05-08T22:30:00")],
+        [new Date("2025-05-09T08:00:00"), new Date("2025-05-09T10:30:00")],
+        [new Date("2025-05-09T13:30:00"), new Date("2025-05-09T15:30:00")],
+    ];
+
+    function compressMinutes(itemStart, itemEnd, activity) {
+        let minutes = 0;
+
+        compressedIntervals.forEach(([intervalStart, intervalEnd], i) => {
+            const currentStart = (i === 0) ?
+                            itemStart :
+                            new Date(Math.max(itemStart, compressedIntervals[i-1][1]));
+            const currentEnd = (i === (compressedIntervals.length-1)) ?
+                            itemEnd :
+                            new Date(Math.min(itemEnd, compressedIntervals[i][1]));
+
+
+/*
+            if ((currentStart.getTime() !== itemStart.getTime()) ||
+                (currentEnd.getTime() !== itemEnd.getTime())) {
+*/
+
+            const before = minutesBetween(Math.min(currentStart, intervalStart), Math.min(intervalStart, currentEnd));
+            const during = minutesBetween(Math.max(currentStart, intervalStart), Math.min(currentEnd, intervalEnd));
+            const after = minutesBetween(Math.max(intervalEnd, currentStart), Math.max(intervalEnd, currentEnd));
+            minutes += before + during / 3 + after;
+
+            if (activity && activity.title &&
+                (activity.title.startsWith("Ceremonia de") || activity.title.startsWith("Ensayo Lumi"))) {
+              console.log(activity);
+              console.log("itemStart", itemStart);
+              console.log("itemEnd", itemEnd);
+              console.log("intervalStart", intervalStart);
+              console.log("intervalEnd", intervalEnd);
+              console.log("currentStart", currentStart);
+              console.log("currentEnd", currentEnd);
+              console.log("before", before);
+              console.log("during", during);
+              console.log("after", after);
+              console.log("minutes", minutes);
+            }
+/*
+            }
+*/
+        });
+
+        return minutes;
+    }
+
     function activityHeight(activity) {
-        const duration = activity.minutes;
-        return (duration * 0.5 - 2).toString() + "rem";
+        const minutes = compressMinutes(startDate(activity), endDate(activity));
+        return (minutes * 0.3 - 2).toString() + "rem";
+    }
+
+    function activityHeightDebug(activity) {
+        const minutes = compressMinutes(startDate(activity), endDate(activity), activity);
+        return (minutes * 2).toString() + "px";
     }
 
     function handleResize() {
@@ -44,6 +117,11 @@
     const showLeftArrow = writable(false);
     const showRightArrow = writable(false);
     const arrowsVisibleOnHover = writable(false);
+
+  function activityHour(activity) {
+    const start = new Date(activity.start);
+    return `${start.getHours()}:${start.getMinutes().toString().padStart(2, '0')}`;
+  }
 
   function updateArrows() {
     if (scrollContainer && columnsContainer) {
@@ -94,6 +172,34 @@
                     {/each}
                 </ul>
             </div>
+
+            {#if debugMode}
+              <div style="display: grid; grid-template-columns: repeat(8, 1fr);; border: 1px solid black;">
+                  {#if current_day}
+                      {#each current_day.tracks as track}
+                          {#if track.activities.length > 0}
+                              <div style="display:flex; flex-direction: column;">
+                                  <p style="background-color: var(--bulma-primary); color: white; margin: 0; padding: 8px; font-size: 85%">{track.title}</p>
+                                  {#each track.activities as activity}
+                                      {#if activity.is_filler}
+                                          <p style="font-size: 85%; background-color: white; margin: 0; padding: 8px; border: 1px solid grey; height: {activityHeightDebug(activity)};" title="{activity.title}">
+                                            {activityHour(activity)} <strong>{activity.minutes}</strong> {activity.title && activity.title.substr(0, 10)}<br />
+                                            <span style="font-size: 70%">{compressMinutes(startDate(activity), endDate(activity))}</span>
+                                          </p>
+                                      {:else}
+                                          <p style="font-size: 85%; background-color: rgb(222, 235, 220); margin: 0; padding: 8px; border: 1px solid grey; height: {activityHeightDebug(activity)};" title="{activity.title}">
+                                            {activityHour(activity)} <strong>{activity.minutes}</strong> {activity.title.substr(0, 10)}<br />
+                                            <span style="font-size: 70%">{compressMinutes(startDate(activity), endDate(activity))}</span>
+                                          </p>
+                                      {/if}
+                                  {/each}
+                              </div>
+                          {/if}
+                      {/each}
+                  {/if}
+              </div>
+            {/if}
+
             <p class="is-size-7-mobile">Utiliza la rueda de ratón para hacer scroll vertical, y con shift + rueda para scroll horizontal</p>
             <div class="agenda-table" bind:this={scrollContainer}>
                 <div class="columns is-1 is-mobile" bind:this={columnsContainer} onmouseenter={handleMouseEnter} onmouseleave={handleMouseLeave}>
